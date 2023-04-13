@@ -20,7 +20,20 @@ DATASET_DIR: Final = EXAMPLE_DIR / "dataset" / "pose_movement"
 DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets/pose_movement"
 
 
+# PyTorch Hub
+import torch
+yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s') 
+#since we are only intrested in detecting person
+yolo_model.classes=[0]
+
+#we need some extra margin bounding box for human crops to be properly detected
+MARGIN=10
+
+
 def track_pose(video_path: str, segment: bool) -> None:
+
+    rr.set_time_seconds("stable_time", 0)
+    
     mp_pose = mp.solutions.pose
 
     rr.log_annotation_context(
@@ -38,30 +51,42 @@ def track_pose(video_path: str, segment: bool) -> None:
     )
     rr.log_view_coordinates("person", up="-Y", timeless=True)
 
-    with closing(VideoSource(video_path)) as video_source, mp_pose.Pose(enable_segmentation=segment) as pose:
+    
+    with closing(VideoSource(video_path)) as video_source:
+            
         for bgr_frame in video_source.stream_bgr():
             rgb = cv.cvtColor(bgr_frame.data, cv.COLOR_BGR2RGB)
             rr.set_time_seconds("time", bgr_frame.time)
             rr.set_time_sequence("frame_idx", bgr_frame.idx)
             rr.log_image("video/rgb", rgb)
 
-            results = pose.process(rgb)
             h, w, _ = rgb.shape
-            landmark_positions_2d = read_landmark_positions_2d(results, w, h)
-            rr.log_points("video/pose/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
-            landmark_positions_3d = read_landmark_positions_3d(results)
-            rr.log_points("person/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+            # use yolov5 to detect person in the frame
+            yolo_result = yolo_model(rgb)
+            person_id = 0
+            for (xmin, ymin, xmax,   ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
+                with mp_pose.Pose(enable_segmentation=segment) as pose:
+                    # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
+                    results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
-            segmentation_mask = results.segmentation_mask
-            if segmentation_mask is not None:
-                rr.log_segmentation_image("video/mask", segmentation_mask)
+                    landmark_positions_2d = read_landmark_positions_2d(results, w, h, (xmin, ymin, xmax, ymax))
+                    rr.log_points("video/pose/"+str(person_id)+"/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
+                    landmark_positions_3d = read_landmark_positions_3d(results)
+                    rr.log_points("person/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+
+                    # segmentation_mask = results.segmentation_mask
+                    # if segmentation_mask is not None:
+                    #     rr.log_segmentation_image("video/mask", segmentation_mask)
+
+                    person_id += 1
 
 def read_landmark_positions_2d(
     results: Any,
     image_width: int,
     image_height: int,
+    bbox: tuple,
 ) -> Optional[npt.NDArray[np.float32]]:
     if results.pose_landmarks is None:
         return None
@@ -69,8 +94,15 @@ def read_landmark_positions_2d(
         normalized_landmarks = [results.pose_landmarks.landmark[lm] for lm in mp.solutions.pose.PoseLandmark]
         # Log points as 3d points with some scaling so they "pop out" when looked at in a 3d view
         # Negative depth in order to move them towards the camera.
+
+        # the normalized_landmarks are normalized to the croped image, so we need to scale them back to the original image
+
+        bbox_width = bbox[2]-bbox[0]
+        bbox_height = bbox[3]-bbox[1]
+
         return np.array(
-            [(image_width * lm.x, image_height * lm.y, -(lm.z + 1.0) * 300.0) for lm in normalized_landmarks]
+            # [(image_width * lm.x, image_height * lm.y, -(lm.z + 1.0) * 300.0) for lm in normalized_landmarks]
+            [((bbox_width * lm.x) + bbox[0], (bbox_height * lm.y) + bbox[1], -(lm.z + 1.0) * 300.0) for lm in normalized_landmarks]
         )
 
 
