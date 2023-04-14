@@ -44,11 +44,11 @@ def track_pose(video_path: str, segment: bool) -> None:
             keypoint_connections=mp_pose.POSE_CONNECTIONS,
         ),
     )
-    # Use a separate annotation context for the segmentation mask.
-    rr.log_annotation_context(
-        "video/mask",
-        [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
-    )
+    # # Use a separate annotation context for the segmentation mask.
+    # rr.log_annotation_context(
+    #     "video/mask",
+    #     [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
+    # )
     rr.log_view_coordinates("person", up="-Y", timeless=True)
 
     
