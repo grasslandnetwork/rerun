@@ -66,7 +66,7 @@ def track_pose(video_path: str, segment: bool) -> None:
             yolo_result = yolo_model(rgb)
             person_id = 0
             for (xmin, ymin, xmax,   ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
-                with mp_pose.Pose(enable_segmentation=segment) as pose:
+                with mp_pose.Pose() as pose:
                     # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
                     results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
