@@ -156,7 +156,11 @@ def get_camera_pose_from_world():
     translation_array = np.array(translation_list)
 
 
-    rotation_nested_list = [[0.21694192407016405,0.2359399679572982,0.9472425946403827],[-0.039333797430330386,0.9716767143068481,-0.23301762863259518],[-0.9753917438447207,0.01329264436285671,0.2200778308812537]]
+    rotation_nested_list = [
+        [0.21694192407016405, 0.2359399679572982, 0.9472425946403827],
+        [-0.039333797430330386, 0.9716767143068481, -0.23301762863259518],
+        [-0.9753917438447207, 0.01329264436285671, 0.2200778308812537]
+    ]
 
     rotation_array = np.array(rotation_nested_list)
     r = R.from_matrix(rotation_array)
@@ -168,7 +172,11 @@ def get_camera_pose_from_world():
     
 def get_camera_intrinsic_matrix():
     # intrinsic matrix
-    intrinsic_list = [[856.7060693457354,0,349.4553311698114],[0,856.6579127840464,360.2700796586361],[0,0,1]]
+    intrinsic_list = [
+        [856.7060693457354, 0, 349.4553311698114],
+        [0, 856.6579127840464, 360.2700796586361],
+        [0, 0, 1]
+    ]
 
     # convert to numpy array
     intrinsic_array = np.array(intrinsic_list)
