@@ -15,6 +15,9 @@ import numpy.typing as npt
 import requests
 import rerun as rr
 
+from scipy.spatial.transform import Rotation as R
+
+
 EXAMPLE_DIR: Final = Path(os.path.dirname(__file__))
 DATASET_DIR: Final = EXAMPLE_DIR / "dataset" / "pose_movement"
 DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets/pose_movement"
@@ -22,6 +25,7 @@ DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets
 
 # PyTorch Hub
 import torch
+
 yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s') 
 #since we are only intrested in detecting person
 yolo_model.classes=[0]
@@ -32,9 +36,38 @@ MARGIN=10
 
 def track_pose(video_path: str, segment: bool) -> None:
 
-    rr.set_time_seconds("stable_time", 0)
-    
     mp_pose = mp.solutions.pose
+
+
+    # # Use a separate annotation context for the segmentation mask.
+    # rr.log_annotation_context(
+    #     "video/mask",
+    #     [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
+    # )
+    
+    rr.log_view_coordinates("world", up="-Y", timeless=True)
+
+    # rr.log_cleared("world/camera")
+
+    # It's a non-moving camera so it doesn't go in the for loop
+    camera_from_world = get_camera_pose_from_world()
+
+
+    rr.log_rigid3(
+        "camera",
+        child_from_parent=camera_from_world,
+        timeless=True,
+    )
+
+    # Log camera intrinsics
+    intrinsics = get_camera_intrinsic_matrix()
+    rr.log_pinhole(
+        "camera/video",
+        child_from_parent=intrinsics,
+        width=1280,
+        height=720,
+        timeless=True,
+    )
 
     rr.log_annotation_context(
         "/",
@@ -44,13 +77,6 @@ def track_pose(video_path: str, segment: bool) -> None:
             keypoint_connections=mp_pose.POSE_CONNECTIONS,
         ),
     )
-    # # Use a separate annotation context for the segmentation mask.
-    # rr.log_annotation_context(
-    #     "video/mask",
-    #     [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
-    # )
-    rr.log_view_coordinates("person", up="-Y", timeless=True)
-
     
     with closing(VideoSource(video_path)) as video_source:
             
@@ -58,7 +84,7 @@ def track_pose(video_path: str, segment: bool) -> None:
             rgb = cv.cvtColor(bgr_frame.data, cv.COLOR_BGR2RGB)
             rr.set_time_seconds("time", bgr_frame.time)
             rr.set_time_sequence("frame_idx", bgr_frame.idx)
-            rr.log_image("video/rgb", rgb)
+            rr.log_image("camera/video/rgb", rgb)
 
             h, w, _ = rgb.shape
 
@@ -71,16 +97,20 @@ def track_pose(video_path: str, segment: bool) -> None:
                     results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
                     landmark_positions_2d = read_landmark_positions_2d(results, w, h, (xmin, ymin, xmax, ymax))
-                    rr.log_points("video/pose/"+str(person_id)+"/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                    rr.log_points("camera/video/person/"+str(person_id)+"/pose/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
-                    landmark_positions_3d = read_landmark_positions_3d(results)
-                    rr.log_points("person/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                    landmark_positions_3d = read_landmark_positions_3d(results, (xmin, ymin, xmax, ymax))
+                    rr.log_points("camera/person/"+str(person_id)+"/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+
+
+                    # move_land_mark_positions_3d(person_id, results)
 
                     # segmentation_mask = results.segmentation_mask
                     # if segmentation_mask is not None:
                     #     rr.log_segmentation_image("video/mask", segmentation_mask)
 
                     person_id += 1
+                    
 
 def read_landmark_positions_2d(
     results: Any,
@@ -91,29 +121,84 @@ def read_landmark_positions_2d(
     if results.pose_landmarks is None:
         return None
     else:
+        
         normalized_landmarks = [results.pose_landmarks.landmark[lm] for lm in mp.solutions.pose.PoseLandmark]
         # Log points as 3d points with some scaling so they "pop out" when looked at in a 3d view
         # Negative depth in order to move them towards the camera.
 
-        # the normalized_landmarks are normalized to the croped image, so we need to scale them back to the original image
-
+        # the normalized_landmarks are normalized to the cropped image, so we need to scale them back to the original image
         bbox_width = bbox[2]-bbox[0]
         bbox_height = bbox[3]-bbox[1]
-
         return np.array(
-            # [(image_width * lm.x, image_height * lm.y, -(lm.z + 1.0) * 300.0) for lm in normalized_landmarks]
             [((bbox_width * lm.x) + bbox[0], (bbox_height * lm.y) + bbox[1], -(lm.z + 1.0) * 300.0) for lm in normalized_landmarks]
         )
 
 
 def read_landmark_positions_3d(
     results: Any,
+    bbox: tuple,
 ) -> Optional[npt.NDArray[np.float32]]:
     if results.pose_landmarks is None:
         return None
     else:
         landmarks = [results.pose_world_landmarks.landmark[lm] for lm in mp.solutions.pose.PoseLandmark]
+
+        # print("world landmarks", landmarks[0])
         return np.array([(lm.x, lm.y, lm.z) for lm in landmarks])
+
+
+def get_camera_pose_from_world():
+    # https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.transform.Rotation.html
+    translation_list = [-48.17233535998567,0.8712905040130878,52.1138980103538] # scale is 1 = 3.08 cm
+    # convert translation list values to meters at scale 1 = 0.00308 m
+    translation_list = [x * 0.00308 for x in translation_list]
+    # convert to numpy array
+    translation_array = np.array(translation_list)
+
+
+    rotation_nested_list = [[0.21694192407016405,0.2359399679572982,0.9472425946403827],[-0.039333797430330386,0.9716767143068481,-0.23301762863259518],[-0.9753917438447207,0.01329264436285671,0.2200778308812537]]
+
+    rotation_array = np.array(rotation_nested_list)
+    r = R.from_matrix(rotation_array)
+    r_quat = r.as_quat()
+
+    return (translation_array,r_quat)
+
+
+    
+def get_camera_intrinsic_matrix():
+    # intrinsic matrix
+    intrinsic_list = [[856.7060693457354,0,349.4553311698114],[0,856.6579127840464,360.2700796586361],[0,0,1]]
+
+    # convert to numpy array
+    intrinsic_array = np.array(intrinsic_list)
+
+    return intrinsic_array
+
+
+
+    
+
+
+def move_land_mark_positions_3d(
+        person_id: int,
+        results: Any
+    ) -> None:
+    # the landmark positions are person coordinates, so we need to move them to the world coordinates
+    # take the metric distrance between person's left and right hip
+
+    # print(mp.solutions.pose.PoseLandmark[23])
+    print("Person "+str(person_id)+" camera: left hip", results.pose_landmarks.landmark[23])
+    print("Person "+str(person_id)+" camera: right hip", results.pose_landmarks.landmark[24])
+    print("Person "+str(person_id)+" world:left hip", results.pose_world_landmarks.landmark[23])
+    print("Person "+str(person_id)+" world:right hip", results.pose_world_landmarks.landmark[24])
+
+    # The left hip and the right hip are on both sides of the origin. Add the absolute value of the left hip and the absolute value of the right hip to get the total width of the person.
+
+    
+    
+    
+
 
 
 @dataclass
