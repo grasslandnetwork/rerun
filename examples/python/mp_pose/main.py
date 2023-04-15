@@ -45,7 +45,7 @@ def track_pose(video_path: str, segment: bool) -> None:
     #     [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
     # )
     
-    rr.log_view_coordinates("world", up="-Y", timeless=True)
+    rr.log_view_coordinates("/", up="-Y", timeless=True)
 
     # rr.log_cleared("world/camera")
 
@@ -59,10 +59,10 @@ def track_pose(video_path: str, segment: bool) -> None:
         timeless=True,
     )
 
-    # Log camera intrinsics
     intrinsics = get_camera_intrinsic_matrix()
+    # Log camera intrinsics
     rr.log_pinhole(
-        "camera/video",
+        "camera/image",
         child_from_parent=intrinsics,
         width=1280,
         height=720,
@@ -84,7 +84,8 @@ def track_pose(video_path: str, segment: bool) -> None:
             rgb = cv.cvtColor(bgr_frame.data, cv.COLOR_BGR2RGB)
             rr.set_time_seconds("time", bgr_frame.time)
             rr.set_time_sequence("frame_idx", bgr_frame.idx)
-            rr.log_image("camera/video/rgb", rgb)
+            rr.log_image("camera/image", rgb) # don't put camera/image/rgb or it won't show the keypoints
+
 
             h, w, _ = rgb.shape
 
@@ -97,7 +98,7 @@ def track_pose(video_path: str, segment: bool) -> None:
                     results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
                     landmark_positions_2d = read_landmark_positions_2d(results, w, h, (xmin, ymin, xmax, ymax))
-                    rr.log_points("camera/video/person/"+str(person_id)+"/pose/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                    rr.log_points("camera/image/person/"+str(person_id)+"/pose/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
                     landmark_positions_3d = read_landmark_positions_3d(results, (xmin, ymin, xmax, ymax))
                     rr.log_points("camera/person/"+str(person_id)+"/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
