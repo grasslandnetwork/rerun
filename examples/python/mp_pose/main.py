@@ -26,7 +26,7 @@ DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets
 # PyTorch Hub
 import torch
 
-yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s') 
+yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
 #since we are only intrested in detecting person
 yolo_model.classes=[0]
 
@@ -72,7 +72,7 @@ def track_pose(video_path: str, segment: bool) -> None:
     rr.log_annotation_context(
         "/",
         rr.ClassDescription(
-            info=rr.AnnotationInfo(label="Person"),
+            info=rr.AnnotationInfo(label="People"),
             keypoint_annotations=[rr.AnnotationInfo(id=lm.value, label=lm.name) for lm in mp_pose.PoseLandmark],
             keypoint_connections=mp_pose.POSE_CONNECTIONS,
         ),
@@ -94,14 +94,15 @@ def track_pose(video_path: str, segment: bool) -> None:
             person_id = 0
             for (xmin, ymin, xmax,   ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
                 with mp_pose.Pose() as pose:
+                    
                     # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
                     results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
                     landmark_positions_2d = read_landmark_positions_2d(results, w, h, (xmin, ymin, xmax, ymax))
-                    rr.log_points("camera/image/person/"+str(person_id)+"/pose/points", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                    rr.log_points("camera/image/people/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
                     landmark_positions_3d = read_landmark_positions_3d(results, (xmin, ymin, xmax, ymax))
-                    rr.log_points("camera/person/"+str(person_id)+"/pose/points", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                    rr.log_points("people/"+str(person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
 
 
                     # move_land_mark_positions_3d(person_id, results)
