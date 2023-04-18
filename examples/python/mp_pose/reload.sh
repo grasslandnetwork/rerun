@@ -5,7 +5,7 @@ source activate rerun_io_4_gln
 
 
 # Define the command to run the Python file
-COMMAND_TO_RUN="python3 main.py --video_path /home/ubuntu/projects/raspberrypi3b_4_sec.mp4 --connect"
+COMMAND_TO_RUN="python3 main.py --video_path $1 --connect"
 
 # Run the command initially
 $COMMAND_TO_RUN
