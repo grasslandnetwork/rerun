@@ -27,9 +27,12 @@ DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets
 # PyTorch Hub
 import torch
 
-yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
-#since we are only intrested in detecting person
-yolo_model.classes=[0]
+    
+from ultralytics import YOLO
+
+yolov8_model = YOLO('yolov8n.pt')
+
+    
 
 #we need some extra margin bounding box for human crops to be properly detected
 MARGIN=10
@@ -117,45 +120,51 @@ def track_pose(video_path: str, segment: bool) -> None:
 
             h, w, _ = rgb.shape
 
-            # use yolov5 to detect person in the frame
-            yolo_result = yolo_model(rgb)
+            # use yolov8 to detect person in the frame
+            # since we are only intrested in detecting person, we use classes=[0]
+            yolov8_results = yolov8_model(rgb, stream=True, classes=[0])
+            
+            # extract xmin, ymin, xmax,   ymax,  confidence,  clas from yolov8_results
+                        
             depth_map = depth.run(rgb)
-
-            print("depth_map", depth_map)
-            print("depth_map.shape", depth_map.shape)
-            print("depth_map[0,0]", depth_map[0,0])
 
             # rgb_depth = cv.imread("depthmap.png")
             depth_image = utilio.depth_to_numpy_array(depth_map)
 
             rr.log_image("camera/depth", depth_image) # don't put camera/image/rgb or it won't show the keypoints
             
-            person_id = 0
-            for (xmin, ymin, xmax,   ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
-                with mp_pose.Pose() as pose:
-                    
-                    # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
-                    results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
-                    # print("person_id", person_id)
-                    landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
-                    rr.log_points("camera/image/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+            # for (xmin, ymin, xmax, ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
+            for yolov8_result in yolov8_results:
+                for person_id, subresult in enumerate(yolov8_result.boxes.xyxy):
+                    (xmin, ymin, xmax, ymax) = subresult.tolist()
+                    confidence = yolov8_result.boxes.conf.tolist()
+                    this_color = get_color(person_id)
+                    rr.log_scalar("confidence/person/"+str(person_id), confidence[person_id], color=this_color)
+
+                    if confidence[person_id] > 0.68:
+                        with mp_pose.Pose() as pose:
+                            # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
+                            results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
+
+                            # print("person_id", person_id)
+                            landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
+                            rr.log_points("camera/image/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
 
-                    rr.log_points("camera/depth/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                            rr.log_points("camera/depth/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
-                    landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
-                    rr.log_points("3dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                            landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
+                            rr.log_points("3dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
 
 
-                    # move_landmark_positions_3d(person_id, results, landmark_positions_2d)
+                            # move_landmark_positions_3d(person_id, results, landmark_positions_2d)
 
-                    # segmentation_mask = results.segmentation_mask
-                    # if segmentation_mask is not None:
-                    #     rr.log_segmentation_image("video/mask", segmentation_mask)
+                            # segmentation_mask = results.segmentation_mask
+                            # if segmentation_mask is not None:
+                            #     rr.log_segmentation_image("video/mask", segmentation_mask)
 
-                    person_id += 1
-                    
+
 
 def read_landmark_positions_2d(
     results: Any,
@@ -379,6 +388,20 @@ def get_downloaded_path(dataset_dir: Path, video_name: str) -> str:
             for chunk in req.iter_content(chunk_size=8192):
                 f.write(chunk)
     return str(destination_path)
+
+
+def get_color(person_id):
+        # Map the person_id to RGB color components
+    if person_id == 0:
+        red, green, blue = 255, 0, 0  # Red
+    elif person_id == 1:
+        red, green, blue = 0, 255, 0  # Green
+    elif person_id == 2:
+        red, green, blue = 0, 0, 255  # Blue
+    else:
+        red, green, blue = 255, 255, 255  # White (default)
+
+    return [red, green, blue]
 
 
 def main() -> None:
