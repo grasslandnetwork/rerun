@@ -214,28 +214,52 @@ def read_landmark_positions_3d(
         return None
     else:
 
+        # these landmarks only provide the relative depth, one against the other. With the zero point being midway between the hips
         world_landmarks = [results.pose_world_landmarks.landmark[lm] for lm in mp.solutions.pose.PoseLandmark]
 
-        # the pixel landmarks and find the corresponding depth value
-        # for each 2d landmark, find the corresponding depth value
-            
-        # get depth of pixel at left hip
-        # print("hip.x", landmark_positions_2d[23,0])
-        # print("hip.y", landmark_positions_2d[23,1])
-        depth_left_hip = depth_map[int(landmark_positions_2d[23,1]), int(landmark_positions_2d[23,0])]
-        # print("depth_left_hip", depth_left_hip)
+        # give me a python list between 0 and 33 but without the numbers in a particular list
 
+                
+        # get the real world depth of particular landmark tht we'll use as a reference landmark
+        ideal_ref_lm_list = [23, 24, 11, 12, 0, 31] #try for the left hip, right hip, left shoulder, right shoulder, nose, and left toe first
         
+        alt_rf_lm_list = [i for i in range(33) if i not in ideal_ref_lm_list] # otherwise, try any other landmark
+        ref_lm_list = ideal_ref_lm_list + alt_rf_lm_list
+        
+        for idx, ref_lm_num in enumerate(ref_lm_list):
+            # sometimes the landmark is outside the image, so we need try till we get one that's inside the image
+            try:
+                # take the landmark's pixel coordinate and use that to find the corresponding depth value
+                rwd_ref_lm = depth_map[int(landmark_positions_2d[ref_lm_num,1]), int(landmark_positions_2d[ref_lm_num,0])]
+                break 
+            except IndexError:
+                if idx == len(ref_lm_list)-1:
+                    print("couldn't find any real world landmark depths")
+                    # bubble up the error
+                    raise IndexError
+        
+                
+        # create a numpy array from  world_landmarks to find the relative depth of the chosen reference landmark
+        world_landmarks_np = np.array([(lm.x, lm.y, lm.z) for lm in world_landmarks])
+        reld_ref_lm = world_landmarks_np[ref_lm_num,2]                              
+
+                                      
         # Intrinsic matrix K
         K = get_camera_intrinsic_matrix()
         
         pixel_landmarks = []
         idx = 0
+
+        # now we'll convert the world_landmark's to real world coordinates                            
         for lm in world_landmarks:
 
-            # Z coordinate in the 3D world space. Adjusted according to the left hip depth
-            lm.z = depth_left_hip + lm.z
+            #lm.z = rwd_left_hip + lm.z
+            
+            # get the landmark's (lm) real world z coordinate 
+            # the formula is rwd(lm) = rwd(ref_lm) + (reld(lm) - reld(ref_lm))
+            lm.z = rwd_ref_lm + (lm.z - reld_ref_lm)
 
+            # get the landmark's real world x and y coordinates using the intrinsic matrix and it's real world z coordinate
             u = landmark_positions_2d[idx,0]
             v = landmark_positions_2d[idx,1]
             # 2D image coordinates (u, v)
@@ -254,7 +278,8 @@ def read_landmark_positions_3d(
             # print("idx", idx)
             idx += 1
 
-        # print("world landmarks", landmarks[0])
+
+        # return the new world_landmarks
         return np.array([(lm.x, lm.y, lm.z) for lm in world_landmarks])
 
 
