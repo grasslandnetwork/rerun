@@ -142,15 +142,14 @@ def track_pose(video_path: str, segment: bool) -> None:
                     this_color = get_color(person_id)
                     rr.log_scalar("confidence/person/"+str(person_id), confidence[person_id], color=this_color)
 
-                    if confidence[person_id] > 0.68:
-                        with mp_pose.Pose() as pose:
-                            # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
-                            results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
+                    with mp_pose.Pose() as pose:
+                        # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
+                        results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
 
-                            # print("person_id", person_id)
-                            landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
+                        landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
+
+                        if confidence[person_id] >= 0.68:
                             rr.log_points("camera/image/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
-
 
                             rr.log_points("camera/depth/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
@@ -164,6 +163,8 @@ def track_pose(video_path: str, segment: bool) -> None:
                             # if segmentation_mask is not None:
                             #     rr.log_segmentation_image("video/mask", segmentation_mask)
 
+                        else:
+                            rr.log_points("camera/image/lowconf/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
 
 def read_landmark_positions_2d(
@@ -415,18 +416,20 @@ def get_downloaded_path(dataset_dir: Path, video_name: str) -> str:
     return str(destination_path)
 
 
-def get_color(person_id):
-        # Map the person_id to RGB color components
-    if person_id == 0:
-        red, green, blue = 255, 0, 0  # Red
-    elif person_id == 1:
-        red, green, blue = 0, 255, 0  # Green
-    elif person_id == 2:
-        red, green, blue = 0, 0, 255  # Blue
-    else:
-        red, green, blue = 255, 255, 255  # White (default)
-
-    return [red, green, blue]
+def get_color(num):
+    colors = [
+        [255, 0, 0],
+        [255, 165, 0],
+        [255, 255, 0],
+        [0, 255, 0],
+        [0, 127, 255],
+        [0, 0, 255],
+        [139, 0, 255],
+        [255, 0, 255],
+        [0, 0, 0]
+    ]
+    
+    return colors[num]
 
 
 def main() -> None:
