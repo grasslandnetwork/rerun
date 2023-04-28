@@ -18,6 +18,7 @@ import rerun as rr
 from scipy.spatial.transform import Rotation as R
 import depth
 import utilio
+import json
 
 EXAMPLE_DIR: Final = Path(os.path.dirname(__file__))
 DATASET_DIR: Final = EXAMPLE_DIR / "dataset" / "pose_movement"
@@ -105,10 +106,7 @@ def track_pose(video_path: str, segment: bool) -> None:
         timeless=True,
     )
     
-
     
-    
-
     
     with closing(VideoSource(video_path)) as video_source:
             
@@ -135,6 +133,9 @@ def track_pose(video_path: str, segment: bool) -> None:
             
 
             # for (xmin, ymin, xmax, ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
+
+            multiple_poses = []
+
             for yolov8_result in yolov8_results:
                 for person_id, subresult in enumerate(yolov8_result.boxes.xyxy):
                     (xmin, ymin, xmax, ymax) = subresult.tolist()
@@ -155,7 +156,12 @@ def track_pose(video_path: str, segment: bool) -> None:
 
                             landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
                             rr.log_points("3dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                            
 
+                            # if it's not none, add it to the list of poses in multiple_poses
+                            if landmark_positions_3d is not None:
+                                pose = [{"x":lm[0], "y":lm[1], "z":lm[2]} for lm in landmark_positions_3d]
+                                multiple_poses.append(pose)
 
                             # move_landmark_positions_3d(person_id, results, landmark_positions_2d)
 
@@ -165,6 +171,23 @@ def track_pose(video_path: str, segment: bool) -> None:
 
                         else:
                             rr.log_points("camera/image/lowconf/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+
+
+                # create a new list of poses that are connected according to the connections in mp_pose.POSE_CONNECTIONS
+                connected_multiple_poses = []
+                for pose in multiple_poses:
+                    keypoints3D = pose
+                    for start_idx, end_idx in mp_pose.POSE_CONNECTIONS:
+                        start_position = keypoints3D[start_idx]
+                        end_position = keypoints3D[end_idx]
+                        if start_position and end_position:
+                            connected_multiple_poses.append({'start': start_position.copy(), 'end': end_position.copy()})
+
+
+                        
+                # print("line", json.dumps(connected_multiple_poses))
+                with open("poses.json", "w") as f:
+                    json.dump(connected_multiple_poses, f)
 
 
 def read_landmark_positions_2d(
@@ -280,6 +303,7 @@ def read_landmark_positions_3d(
             idx += 1
 
 
+        
         # return the new world_landmarks
         return np.array([(lm.x, lm.y, lm.z) for lm in world_landmarks])
 
