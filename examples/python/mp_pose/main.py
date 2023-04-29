@@ -16,7 +16,7 @@ import requests
 import rerun as rr
 
 from scipy.spatial.transform import Rotation as R
-import depth
+from depth import Depth
 import utilio
 import json
 
@@ -33,7 +33,8 @@ from ultralytics import YOLO
 
 yolov8_model = YOLO('yolov8n.pt')
 
-    
+# initialize depth model
+depth = Depth()
 
 #we need some extra margin bounding box for human crops to be properly detected
 MARGIN=10
