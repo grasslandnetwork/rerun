@@ -179,12 +179,6 @@ def track_pose(video_path: str, segment: bool) -> None:
                                 pose = [{"x":lm[0], "y":lm[1], "z":lm[2], "timestamp": frame_timestamp, "frame_idx": bgr_frame.idx} for lm in landmark_positions_3d]
                                 multiple_poses.append(pose)
 
-                            # move_landmark_positions_3d(person_id, results, landmark_positions_2d)
-
-                            # segmentation_mask = results.segmentation_mask
-                            # if segmentation_mask is not None:
-                            #     rr.log_segmentation_image("video/mask", segmentation_mask)
-
                         else:
                             rr.log_points("camera/image/lowconf/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
@@ -376,42 +370,6 @@ def get_camera_intrinsic_matrix():
     intrinsic_array = np.array(intrinsic_list)
 
     return intrinsic_array
-
-
-
-
-def move_landmark_positions_3d(
-        person_id: int,
-        results: Any,
-        landmark_positions_2d: npt.NDArray[np.float32],
-    ) -> None:
-    # the landmark positions are person coordinates, so we need to move them to the world coordinates
-    # take the metric distrance between person's left and right hip
-
-    # print(mp.solutions.pose.PoseLandmark[23])
-    print("Person "+str(person_id)+" camera: left hip", results.pose_landmarks.landmark[23])
-    print("Person "+str(person_id)+" camera: right hip", results.pose_landmarks.landmark[24])
-    print("Person "+str(person_id)+" world:left hip", results.pose_world_landmarks.landmark[23])
-    print("Person "+str(person_id)+" world:right hip", results.pose_world_landmarks.landmark[24])
-
-    # The left hip and the right hip are on both sides of the origin. Add the absolute value of the left hip and the absolute value of the right hip to get the total width of the person.
-
-    # get the pixel position of the center point (between hips)
-
-    
-    # first get the absolute value of the left hip and the absolute value of the right hip
-    left_hip_x = abs(results.pose_landmarks.landmark[23].x)
-    left_hip_y = abs(results.pose_landmarks.landmark[23].y)
-    right_hip_x = abs(results.pose_landmarks.landmark[24].x)
-    right_hip_y = abs(results.pose_landmarks.landmark[24].y)
-
-    
-    
-    
-
-    
-    
-    
 
 
 
