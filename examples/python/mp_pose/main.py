@@ -176,8 +176,7 @@ def track_pose(video_path: str, segment: bool) -> None:
 
                             # if it's not none, add it to the list of poses in multiple_poses
                             if landmark_positions_3d is not None:
-                                print("frame_timestamp", frame_timestamp)
-                                pose = [{"timestamp": frame_timestamp, "x":lm[0], "y":lm[1], "z":lm[2]} for lm in landmark_positions_3d]
+                                pose = [{"x":lm[0], "y":lm[1], "z":lm[2], "timestamp": frame_timestamp, "frame_idx": bgr_frame.idx} for lm in landmark_positions_3d]
                                 multiple_poses.append(pose)
 
                             # move_landmark_positions_3d(person_id, results, landmark_positions_2d)
@@ -190,27 +189,28 @@ def track_pose(video_path: str, segment: bool) -> None:
                             rr.log_points("camera/image/lowconf/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
 
-            # create a new list of poses that are connected according to the connections in mp_pose.POSE_CONNECTIONS
-            connected_multiple_poses = []
+            # reorganize the list of poses in this frame so that they are connected according to the connections in mp_pose.POSE_CONNECTIONS
+            new_connected_multiple_poses = []
             for pose in multiple_poses:
                 keypoints3D = pose
                 for start_idx, end_idx in mp_pose.POSE_CONNECTIONS:
                     start_position = keypoints3D[start_idx]
                     end_position = keypoints3D[end_idx]
                     if start_position and end_position:
-                        connected_multiple_poses.append({'start': start_position.copy(), 'end': end_position.copy()})
+                        new_connected_multiple_poses.append({'start': start_position.copy(), 'end': end_position.copy()})
 
+                    
 
             # Load existing JSON data from file
             with open(file_name, 'r') as f:
-                data = json.load(f)
+                existing_connected_multiple_poses = json.load(f)
 
-            # Append new data to array
-            data.append(connected_multiple_poses)
+            # Append new existing_connected_multiple_poses to array
+            existing_connected_multiple_poses.extend(new_connected_multiple_poses)
 
-            # Write modified JSON data back to file
+            # Write modified JSON existing_connected_multiple_poses back to file
             with open(file_name, "w") as f:
-                json.dump(connected_multiple_poses, f, indent=4)
+                json.dump(existing_connected_multiple_poses, f, indent=4)
 
 
 def read_landmark_positions_2d(
