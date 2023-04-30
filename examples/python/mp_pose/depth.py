@@ -7,6 +7,8 @@ from torchvision.transforms import Compose
 
 from dpt.models import DPTDepthModel
 from dpt.transforms import Resize, NormalizeImage, PrepareForNet
+import time
+
 
 # make a class for depth model
 class Depth:
@@ -68,9 +70,11 @@ class Depth:
 
         Args:
             frame (str): path to input image
-            model_path (str): path to saved model
+           
         """
 
+        start_time = time.perf_counter()
+        
         # print("start processing {} )".format(frame))
 
         # if frame.ndim == 2:
@@ -111,6 +115,9 @@ class Depth:
             # print("prediction", prediction)
             # utilio.write_depth("depthmap", prediction, bits=2)
 
+            end_time = time.perf_counter()
+            elapsed_time_ms = (end_time - start_time) * 1000
+            print(f"Depth Map Perf.: {elapsed_time_ms:.2f} ms")
             return prediction
 
 
