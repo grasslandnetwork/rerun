@@ -62,6 +62,47 @@ def show_initial_frame_time(timestamp):
 
 
 
+# Initialize global variables for pose estimation
+pose_estimators = {}
+pose_dimensions = {}
+
+def match_person(bounding_box, pose_dimensions):
+    # Implement the matching function here (e.g., using IoU or Euclidean distance)
+    max_iou = 0
+    matched_id = None
+
+    for person_id, person_dimensions in pose_dimensions.items():
+        iou = calculate_iou(bounding_box, person_dimensions)
+        if iou > max_iou:
+            max_iou = iou
+            matched_id = person_id
+
+    # Threshold to consider a person as the same person
+    iou_threshold = 0.5
+    if max_iou > iou_threshold:
+        return matched_id
+    else:
+        return None
+
+def calculate_iou(box1, box2):
+    # Calculate the intersection area
+    # x1 = max(box1.x, box2.x)
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[0] + box1[2], box2[0] + box2[2])
+    y2 = min(box1[1] + box1[3], box2[1] + box2[3])
+    intersection_area = max(0, x2 - x1) * max(0, y2 - y1)
+
+    # Calculate the union area
+    box1_area = box1[2] * box1[3]
+    box2_area = box2[2] * box2[3]
+    union_area = box1_area + box2_area - intersection_area
+
+    # Calculate IoU
+    iou = intersection_area / union_area
+    return iou
+
+
 def track_pose(video_path: str, segment: bool) -> None:
 
     mp_pose = mp.solutions.pose
@@ -173,34 +214,65 @@ def track_pose(video_path: str, segment: bool) -> None:
             multiple_poses = []
 
             for yolov8_result in yolov8_results:
-                for person_id, subresult in enumerate(yolov8_result.boxes.xyxy):
+                for yolo_person_id, subresult in enumerate(yolov8_result.boxes.xyxy):
                     (xmin, ymin, xmax, ymax) = subresult.tolist()
                     confidence = yolov8_result.boxes.conf.tolist()
-                    this_color = get_color(person_id)
-                    rr.log_scalar("confidence/person/"+str(person_id), confidence[person_id], color=this_color)
+                    
 
-                    with mp_pose.Pose() as pose:
-                        # take each detected person bounding box, crop the original image to the bounding box and have mediapipe detect the pose in the crop
-                        results = pose.process(rgb[int(ymin)+MARGIN:int(ymax)+MARGIN,int(xmin)+MARGIN:int(xmax)+MARGIN:])
+                    bounding_box = (xmin, ymin, xmax - xmin, ymax - ymin)
 
-                        landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
+                    # Match the detected person to their corresponding pose estimator
+                    mp_person_id = match_person(bounding_box, pose_dimensions)
 
-                        if confidence[person_id] >= 0.68:
-                            rr.log_points("camera/image/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                    if mp_person_id is None:
+                        # Create a new instance of pose estimator for the new person
+                        mp_person_id = len(pose_estimators)
+                        pose_estimators[mp_person_id] = mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-                            rr.log_points("camera/depth/2dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                    pose_estimator = pose_estimators[mp_person_id]
 
-                            landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
-                            rr.log_points("3dpeople/"+str(person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                    # Update pose dimensions for the person
+                    pose_dimensions[mp_person_id] = bounding_box
+
+                    # Crop the image using bounding box
+                    cropped_image = rgb[int(ymin):int(ymax), int(xmin):int(xmax)]
+
+                    # Run pose estimation on the cropped image
+                    results = pose_estimator.process(cropped_image)
+
+
+                    landmark_positions_2d = read_landmark_positions_2d(results, depth_map, w, h, (xmin, ymin, xmax, ymax))
+
+                    
+                    # The visibility attribute represents the confidence score of that landmark.
+                    # Use that to get the average confidence of the pose
+                    pose_confidence = 0.0 # set the intial value
+                    confidence_scores = []
+                    if results.pose_landmarks:
+                        for landmark in results.pose_world_landmarks.landmark:
+                            confidence_scores.append(landmark.visibility)
+                            pose_confidence = sum(confidence_scores) / len(confidence_scores)
+
                             
+                    this_color = get_color(mp_person_id)    
+                    rr.log_scalar("confidence/person/"+str(mp_person_id), pose_confidence, color=this_color)
 
-                            # if it's not none, add it to the list of poses in multiple_poses
-                            if landmark_positions_3d is not None:
-                                pose = [{"x":lm[0], "y":lm[1], "z":lm[2], "timestamp": frame_timestamp, "frame_idx": bgr_frame.idx} for lm in landmark_positions_3d]
-                                multiple_poses.append(pose)
+                    if confidence[yolo_person_id] >= 0.68 and pose_confidence >= 0.5:
+                        rr.log_points("camera/image/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
-                        else:
-                            rr.log_points("camera/image/lowconf/"+str(person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                        rr.log_points("camera/depth/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+
+                        landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
+                        rr.log_points("3dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+
+
+                        # if it's not none, add it to the list of poses in multiple_poses
+                        if landmark_positions_3d is not None:
+                            pose = [{"x":lm[0], "y":lm[1], "z":lm[2], "timestamp": frame_timestamp, "frame_idx": bgr_frame.idx} for lm in landmark_positions_3d]
+                            multiple_poses.append(pose)
+
+                    else:
+                        rr.log_points("camera/image/lowconf/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
 
             # reorganize the list of poses in this frame so that they are connected according to the connections in mp_pose.POSE_CONNECTIONS
