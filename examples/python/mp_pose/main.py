@@ -44,6 +44,24 @@ import time
 def current_milli_time():
     return round(time.time() * 1000)
 
+
+import datetime
+import pytz
+def show_initial_frame_time(timestamp):
+    # Convert the Unix timestamp in milliseconds to a datetime object
+    dt = datetime.datetime.fromtimestamp(timestamp/1000.0, pytz.utc)
+
+    # Convert to the user's local timezone
+    local_tz = pytz.timezone('America/New_York')  # replace with your desired timezone
+    local_dt = dt.astimezone(local_tz)
+
+    # Format the time as a string with 12 hour format
+    time_str = local_dt.strftime("%I:%M:%S %p")  # %I for 12 hour format, %p for AM/PM
+
+    print("The initial time is:", time_str)
+
+
+
 def track_pose(video_path: str, segment: bool) -> None:
 
     mp_pose = mp.solutions.pose
@@ -120,7 +138,11 @@ def track_pose(video_path: str, segment: bool) -> None:
             json.dump([], f)
 
 
-        
+        # set initial frame timestamp for the start of the video file 
+        frame_timestamp = current_milli_time()
+
+        show_initial_frame_time(frame_timestamp)
+            
         for bgr_frame in video_source.stream_bgr():
             rgb = cv.cvtColor(bgr_frame.data, cv.COLOR_BGR2RGB)
             rr.set_time_seconds("time", bgr_frame.time)
@@ -145,11 +167,9 @@ def track_pose(video_path: str, segment: bool) -> None:
 
             # for (xmin, ymin, xmax, ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
 
-            # set frame timestamp for poses
-            frame_timestamp = current_milli_time()
+            # Add the current position of the video file in milliseconds to the frame_timestamp
+            frame_timestamp += round(bgr_frame.time)
             
-
-
             multiple_poses = []
 
             for yolov8_result in yolov8_results:
