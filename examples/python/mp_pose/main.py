@@ -171,13 +171,15 @@ def track_pose(video_path: str, segment: bool) -> None:
     )
     
     
-    
     with closing(VideoSource(video_path)) as video_source:
         file_name = os.path.basename(video_path)+"_poses.json"
         # Open the file in write a blank list to it
         with open(file_name, 'w') as f:
             json.dump([], f)
 
+        # get the amount of milliseconds we should increment the timestamp for each new frame
+        video_source_fps = video_source.capture.get(cv.CAP_PROP_FPS)
+        frame_increment = round(1000/video_source_fps)
 
         # set initial frame timestamp for the start of the video file 
         frame_timestamp = current_milli_time()
@@ -208,9 +210,9 @@ def track_pose(video_path: str, segment: bool) -> None:
 
             # for (xmin, ymin, xmax, ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
 
-            # Add the current position of the video file in milliseconds to the frame_timestamp
-            frame_timestamp += round(bgr_frame.time)
-            
+            # Add the amount we should increment for each new frame to the frame_timestamp
+            frame_timestamp += frame_increment
+
             multiple_poses = []
 
             for yolov8_result in yolov8_results:
