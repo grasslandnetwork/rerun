@@ -172,7 +172,8 @@ def track_pose(video_path: str, segment: bool) -> None:
     
     
     with closing(VideoSource(video_path)) as video_source:
-        file_name = os.path.basename(video_path)+"_poses.json"
+        # file_name = os.path.basename(video_path)+"_poses.json"
+        file_name = "poses.json"
         # Open the file in write a blank list to it
         with open(file_name, 'w') as f:
             json.dump([], f)
