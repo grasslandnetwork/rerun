@@ -172,7 +172,6 @@ def track_pose(video_path: str, segment: bool) -> None:
     
     
     with closing(VideoSource(video_path)) as video_source:
-        # file_name = os.path.basename(video_path)+"_poses.json"
         file_name = "poses.json"
         # Open the file in write a blank list to it
         with open(file_name, 'w') as f:
@@ -299,6 +298,10 @@ def track_pose(video_path: str, segment: bool) -> None:
 
             # Write modified JSON existing_connected_multiple_poses back to file
             with open(file_name, "w") as f:
+                json.dump(existing_connected_multiple_poses, f, indent=4)
+
+            # write to named file as well
+            with open(os.path.basename(video_path)+"_poses.json", "w") as f:
                 json.dump(existing_connected_multiple_poses, f, indent=4)
 
 
@@ -517,18 +520,8 @@ def get_downloaded_path(dataset_dir: Path, video_name: str) -> str:
 
 
 def get_color(num):
-    colors = [
-        [255, 0, 0],
-        [255, 165, 0],
-        [255, 255, 0],
-        [0, 255, 0],
-        [0, 127, 255],
-        [0, 0, 255],
-        [139, 0, 255],
-        [255, 0, 255],
-        [0, 0, 0]
-    ]
-    
+    np.random.seed(42)  # Optional: Set a seed for reproducibility
+    colors = [list(np.random.randint(0, 256, size=3)) for _ in range(100)]
     return colors[num]
 
 
