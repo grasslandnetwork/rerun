@@ -182,7 +182,8 @@ def track_pose(video_path: str, segment: bool, camera_id) -> None:
     
     
     with closing(VideoSource(video_path)) as video_source:
-        file_name = "poses.json"
+        # file_name = "poses.json"
+        file_name = os.path.basename(video_path)+"_poses.json"
         # Open the file in write a blank list to it
         with open(file_name, 'w') as f:
             json.dump([], f)
@@ -323,9 +324,9 @@ def track_pose(video_path: str, segment: bool, camera_id) -> None:
             with open(file_name, "w") as f:
                 json.dump(existing_connected_multiple_poses, f, indent=4)
 
-            # write to named file as well
-            with open(os.path.basename(video_path)+"_poses.json", "w") as f:
-                json.dump(existing_connected_multiple_poses, f, indent=4)
+            # # write to named file as well
+            # with open(os.path.basename(video_path)+"_poses.json", "w") as f:
+            #     json.dump(existing_connected_multiple_poses, f, indent=4)
 
 
 def read_landmark_positions_2d(
