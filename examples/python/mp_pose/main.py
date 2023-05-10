@@ -19,11 +19,13 @@ from scipy.spatial.transform import Rotation as R
 from depth import Depth
 import utilio
 import json
+import yaml
 
 EXAMPLE_DIR: Final = Path(os.path.dirname(__file__))
 DATASET_DIR: Final = EXAMPLE_DIR / "dataset" / "pose_movement"
 DATASET_URL_BASE: Final = "https://storage.googleapis.com/rerun-example-datasets/pose_movement"
 
+rerun_recording_id = ""
 
 # PyTorch Hub
 import torch
@@ -45,6 +47,36 @@ def current_milli_time():
     return round(time.time() * 1000)
 
 
+#This will contain the calibration settings from the calibration_settings.yaml file
+calibration_settings = {}
+
+#Open and load the calibration_settings.yaml file
+def parse_calibration_settings_file(camera_id):
+        
+    global calibration_settings
+
+    filename = 'calibration_settings.yaml'
+
+    if not os.path.exists(filename):
+        print('File does not exist:', filename)
+        quit()
+    
+    print('Using for calibration settings: ', filename)
+
+    with open(filename) as f:
+        settings_data = yaml.safe_load(f)
+
+    #rudimentray check to make sure correct file was loaded
+    if camera_id not in settings_data.keys():
+        print(camera_id+' was not found in the settings file. Check if correct calibration_settings.yaml file was passed')
+        quit()
+
+    else:
+        print("config_data.get(camera_id)", settings_data.get(camera_id))
+        calibration_settings = settings_data.get(camera_id)
+
+
+        
 import datetime
 import pytz
 def show_initial_frame_time(timestamp):
@@ -103,10 +135,11 @@ def calculate_iou(box1, box2):
     return iou
 
 
-def track_pose(video_path: str, segment: bool) -> None:
+def track_pose(video_path: str, segment: bool, camera_id) -> None:
+
+    parse_calibration_settings_file(camera_id)
 
     mp_pose = mp.solutions.pose
-
 
     # # Use a separate annotation context for the segmentation mask.
     # rr.log_annotation_context(
@@ -114,48 +147,25 @@ def track_pose(video_path: str, segment: bool) -> None:
     #     [rr.AnnotationInfo(id=0, label="Background"), rr.AnnotationInfo(id=1, label="Person", color=(0, 0, 0))],
     # )
 
-    rr.log_annotation_context(
-        "/",
-        rr.ClassDescription(
-            info=rr.AnnotationInfo(label="Person"),
-            keypoint_annotations=[rr.AnnotationInfo(id=lm.value, label=lm.name) for lm in mp_pose.PoseLandmark],
-            keypoint_connections=mp_pose.POSE_CONNECTIONS,
-        ),
-    )
+    
 
-    rr.log_view_coordinates("3dpeople", up="-Y", timeless=True)
+
+    rr.log_view_coordinates("world", up="Y", timeless=True)
 
     intrinsics = get_camera_intrinsic_matrix()
-
-    # primary_camera_from_world = get_camera_pose_from_world(primary=True)
-    # rr.log_rigid3(
-    #     "camera0",
-    #     parent_from_child=primary_camera_from_world,
-    #     timeless=True,
-    # )
-
-    # rr.log_pinhole(
-    #     "camera0/image",
-    #     child_from_parent=intrinsics,
-    #     width=1280,
-    #     height=720,
-    #     timeless=True,
-    # )
-
     
     # It's a non-moving camera so it doesn't go in the for loop
-    camera_from_world = get_camera_pose_from_world(primary=True)
+    camera_from_world = get_camera_pose_from_world(camera_id)
 
     rr.log_rigid3(
-        "camera",
+        "world/camera/"+camera_id,
         child_from_parent=camera_from_world,
         timeless=True,
     )
 
-
     # Log camera intrinsics
     rr.log_pinhole(
-        "camera/image",
+        "world/camera/"+camera_id+"/image",
         child_from_parent=intrinsics,
         width=1280,
         height=720,
@@ -163,7 +173,7 @@ def track_pose(video_path: str, segment: bool) -> None:
     )
 
     rr.log_pinhole(
-        "camera/depth",
+        "world/camera/"+camera_id+"/depth",
         child_from_parent=intrinsics,
         width=1280,
         height=720,
@@ -190,7 +200,7 @@ def track_pose(video_path: str, segment: bool) -> None:
             rgb = cv.cvtColor(bgr_frame.data, cv.COLOR_BGR2RGB)
             rr.set_time_seconds("time", bgr_frame.time)
             rr.set_time_sequence("frame_idx", bgr_frame.idx)
-            rr.log_image("camera/image", rgb) # don't put camera/image/rgb or it won't show the keypoints
+            rr.log_image("world/camera/"+camera_id+"/image", rgb) # don't put camera/image/rgb or it won't show the keypoints
 
             h, w, _ = rgb.shape
 
@@ -205,7 +215,7 @@ def track_pose(video_path: str, segment: bool) -> None:
             # rgb_depth = cv.imread("depthmap.png")
             depth_image = utilio.depth_to_numpy_array(depth_map)
 
-            rr.log_image("camera/depth", depth_image) # don't put camera/image/rgb or it won't show the keypoints
+            rr.log_image("world/camera/"+camera_id+"/depth", depth_image) # don't put camera/image/rgb or it won't show the keypoints
             
 
             # for (xmin, ymin, xmax, ymax,  confidence,  clas) in yolo_result.xyxy[0].tolist():
@@ -228,7 +238,7 @@ def track_pose(video_path: str, segment: bool) -> None:
 
                     if mp_person_id is None:
                         # Create a new instance of pose estimator for the new person
-                        mp_person_id = len(pose_estimators)
+                        mp_person_id = camera_id+"-"+str(len(pose_estimators))
                         pose_estimators[mp_person_id] = mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
                     pose_estimator = pose_estimators[mp_person_id]
@@ -257,24 +267,37 @@ def track_pose(video_path: str, segment: bool) -> None:
 
                             
                     this_color = get_color(mp_person_id)    
-                    rr.log_scalar("confidence/person/"+str(mp_person_id), pose_confidence, color=this_color)
+                    rr.log_scalar("confidence/person/"+str(yolo_person_id), confidence[yolo_person_id], color=this_color)
 
                     if confidence[yolo_person_id] >= 0.68 and pose_confidence >= 0.5:
-                        rr.log_points("camera/image/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                        rr.log_points("world/camera/"+camera_id+"/image/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
-                        rr.log_points("camera/depth/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                        rr.log_points("world/camera/"+camera_id+"/depth/2dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+
+
+                        rr.log_annotation_context(
+                            "world/"+str(mp_person_id)+"/pose/keypoints",
+                            rr.ClassDescription(
+                                info=rr.AnnotationInfo(label="Person"),
+                                keypoint_annotations=[rr.AnnotationInfo(id=lm.value, label=lm.name) for lm in mp_pose.PoseLandmark],
+                                keypoint_connections=mp_pose.POSE_CONNECTIONS,
+                            ),
+                        )
 
                         landmark_positions_3d = read_landmark_positions_3d(results, landmark_positions_2d, depth_map, (xmin, ymin, xmax, ymax))
-                        rr.log_points("3dpeople/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
+                        rr.log_points("world/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_3d, keypoint_ids=mp_pose.PoseLandmark)
 
+                        
 
+                        
                         # if it's not none, add it to the list of poses in multiple_poses
                         if landmark_positions_3d is not None:
                             pose = [{"x":lm[0], "y":lm[1], "z":lm[2], "timestamp": frame_timestamp, "frame_idx": bgr_frame.idx} for lm in landmark_positions_3d]
                             multiple_poses.append(pose)
 
                     else:
-                        rr.log_points("camera/image/lowconf/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
+                        pass
+                        # rr.log_points("world/camera/"+camera_id+"/image/lowconf/"+str(mp_person_id)+"/pose/keypoints", landmark_positions_2d, keypoint_ids=mp_pose.PoseLandmark)
 
 
             # reorganize the list of poses in this frame so that they are connected according to the connections in mp_pose.POSE_CONNECTIONS
@@ -423,26 +446,17 @@ def read_landmark_positions_3d(
         return np.array([(lm.x, lm.y, lm.z) for lm in world_landmarks])
 
 
-def get_camera_pose_from_world(primary=False):
+def get_camera_pose_from_world(camera_id):
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.transform.Rotation.html
-    translation_list = [-48.17233535998567,0.8712905040130878,52.1138980103538] # scale is 1 = 3.08 cm
-    if primary:
-        translation_list = [0.0,0.0,0.0]
+    
+    translation_list = calibration_settings["trans"] 
     # convert translation list values to meters at scale 1 = 0.00308 m
-    translation_list = [x * 0.00308 for x in translation_list]
+    # translation_list = [x * 0.00308 for x in translation_list]
     # convert to numpy array
     translation_array = np.array(translation_list)
 
-
-    rotation_nested_list = [
-        [0.21694192407016405, 0.2359399679572982, 0.9472425946403827],
-        [-0.039333797430330386, 0.9716767143068481, -0.23301762863259518],
-        [-0.9753917438447207, 0.01329264436285671, 0.2200778308812537]
-    ]
-
-    if primary:
-        rotation_nested_list = [1.0, 0.0, 0.0 ],[0.0, 1.0, 0.0],[0.0, 0.0, 1.0]
-
+    rotation_nested_list = calibration_settings["rot"]
+    
     rotation_array = np.array(rotation_nested_list)
     r = R.from_matrix(rotation_array)
     r_quat = r.as_quat()
@@ -519,7 +533,13 @@ def get_downloaded_path(dataset_dir: Path, video_name: str) -> str:
     return str(destination_path)
 
 
-def get_color(num):
+
+
+        
+def get_color(person_id):
+    # person_id will look like "raspberrypi3b-1". Strip the raspberrypi3b- part
+    num = int(person_id.split("-")[1])
+    
     np.random.seed(42)  # Optional: Set a seed for reproducibility
     colors = [list(np.random.randint(0, 256, size=3)) for _ in range(100)]
     return colors[num]
@@ -538,9 +558,13 @@ def main() -> None:
         choices=["backflip", "soccer"],
         help="The example video to run on.",
     )
+
+    rr.set_recording_id(rerun_recording_id)
+    
     parser.add_argument("--dataset_dir", type=Path, default=DATASET_DIR, help="Directory to save example videos to.")
     parser.add_argument("--video_path", type=str, default="", help="Full path to video to run on. Overrides `--video`.")
     parser.add_argument("--no-segment", action="store_true", help="Don't run person segmentation.")
+    parser.add_argument("--camera_id", type=str, default="0", help="The camera id")
     rr.script_add_args(parser)
 
     args = parser.parse_args()
@@ -550,7 +574,7 @@ def main() -> None:
     if not video_path:
         video_path = get_downloaded_path(args.dataset_dir, args.video)
 
-    track_pose(video_path, segment=not args.no_segment)
+    track_pose(video_path, segment=not args.no_segment, camera_id=args.camera_id)
 
     rr.script_teardown(args)
 
