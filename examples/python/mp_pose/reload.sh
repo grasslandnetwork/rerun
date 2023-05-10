@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the command to run the Python file
-COMMAND_TO_RUN="python3 main.py --video_path $1 --connect"
+COMMAND_TO_RUN="python3 main.py --video_path $1 --camera_id $2 --connect"
 
 # Define a function to run when the script is interrupted
 function cleanup {
